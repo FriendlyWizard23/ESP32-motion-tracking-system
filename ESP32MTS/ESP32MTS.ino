@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <TaskScheduler.h>
+#include <Stepper.h>
 #include <TinyStepper_28BYJ_48.h>
 // CAMERA SETTINGS
 #include "camera_pins.h"
@@ -23,6 +24,7 @@
 #define WIM_REGIONS                   10
 #define PIXELS_IN_REGION              (VIEWPORT_PIXELS/WIM_REGIONS)
 #define STEPS_PER_DEGREE              6
+#define STEPS_PER_REVOLUTION          2048
 #define STEPS_PER_SECOND              4096
 
 
@@ -53,10 +55,18 @@ const uint8_t STEP_IN4 = 15;
 // scheduler stuff
 TinyStepper_28BYJ_48 motor;
 
+Stepper myStepper(STEPS_PER_REVOLUTION, STEP_IN1, STEP_IN3, STEP_IN2, STEP_IN4);
+
 // Scheduler
 Scheduler tasks;
 void moveStepperMotor();
-Task stepperTask (250, TASK_FOREVER, &moveStepperMotor, &tasks, true );
+/*  250 milliseconds delay
+    run forever
+    moveStepperMotor function
+    tasks scheduler name
+    enabled forever
+*/
+Task stepperTask (1000, TASK_FOREVER, &moveStepperMotor);
 
 void setup() {
   Serial.begin(115200);
@@ -70,8 +80,9 @@ void setup() {
   Serial.println(camera_init(FRAME_SIZE,PIXFORMAT_GRAYSCALE) ? "CAMERA READY AND OK" : "ERROR INITIATING CAMERA");
   #endif 
   stepper_init();
+  tasks_init();
   blinkFlash();
-  testStepper();
+  //mystepperTest();
   #if ENABLE_WEB_SERVER
   // Connessione Wi-Fi
   connect_to_WIFI();
@@ -79,6 +90,7 @@ void setup() {
   startCameraServer();
   #endif
   tasks.startNow();
+  tasks.execute();
 }
 
 void loop() {
@@ -99,13 +111,12 @@ void loop() {
 void startCameraServer() {
   server.on("/stream", HTTP_GET, handle_jpg_stream);  // Percorso per visualizzare il feed MJPEG
   server.begin();  // Avvio del server
-  Serial.println("[SERVER] Successfully started server");
+  Serial.println("[SERVER]> Successfully started server");
 }
 
 
 // Gestione dello stream JPG
 void handle_jpg_stream() {
-  
   #if ENABLE_WEB_SERVER
   // Permette al sistema di fare altre operazioni
   WiFiClient client = server.client();  
@@ -116,10 +127,11 @@ void handle_jpg_stream() {
   #endif
 
   while (true) {
+    tasks.execute();
     camera_fb_t *fb = get_frame();
     if (!fb) {
       #if SERIAL
-      Serial.println("[CAMERA] Error while capturing frame");
+      Serial.println("[CAMERA]> Error while capturing frame");
       #endif
       #if ENABLE_WEB_SERVER
       server.send(503, "text/plain", "Impossible to capture frame");
@@ -135,11 +147,14 @@ void handle_jpg_stream() {
     client.print("\r\n");
     #endif
     // managing disconnection
-    if (flag && detect_motion()){
-      region_movement=calculate_region(where_is_motion);
+    bool motion=detect_motion();
+    region_movement=calculate_region(where_is_motion);
+    moveTP=((10-region_movement)*10)*STEPS_PER_DEGREE;
+    if (flag && motion){
       #if SERIAL
-      Serial.println("[MOTION]: Motion detected");
-      Serial.println("[MOTION]: Region: "+String(region_movement));
+      Serial.println("[MOTION]> Motion detected");
+      Serial.println("[MOTION]> Region: "+String(region_movement));
+      Serial.println("[MOTION]> Moving to: "+String(moveTP));
       Serial.println();
       #endif
       clear_motion_buffer();
@@ -220,9 +235,9 @@ bool camera_init(framesize_t frameSize,pixformat_t PIXEL_FORMAT) {
 
 
 void showDiagnostics(){
-  Serial.println("[ESP32] CPU Frequency :: "+String(getCpuFrequencyMhz())+" Mhz");
-  Serial.println("[ESP32] XTAL Frequency :: "+String(getXtalFrequencyMhz())+" Mhz");
-  Serial.println("[ESP32] APB Freq = "+String(getApbFrequency())+" Hz");
+  Serial.println("[ESP32]> CPU Frequency :: "+String(getCpuFrequencyMhz())+" Mhz");
+  Serial.println("[ESP32]> XTAL Frequency :: "+String(getXtalFrequencyMhz())+" Mhz");
+  Serial.println("[ESP32]> APB Freq = "+String(getApbFrequency())+" Hz");
 }
 
 bool connect_to_WIFI(){
@@ -232,13 +247,13 @@ bool connect_to_WIFI(){
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
     #if SERIAL
-    Serial.print("[WIFI] Connecting to wifi: " + String(ssid) + " with pwd: " + String(password) + "...\n");
+    Serial.print("[WIFI]> Connecting to wifi: " + String(ssid) + " with pwd: " + String(password) + "...\n");
     #endif
   }
   #if SERIAL
   Serial.println("");
-  Serial.println("[WIFI] Wifi Connected");
-  Serial.println("[WIFI] IP: ");
+  Serial.println("[WIFI]> Wifi Connected");
+  Serial.println("[WIFI]> IP: ");
   Serial.println(WiFi.localIP());
   blinkFlash();
   #endif
@@ -345,9 +360,9 @@ camera_fb_t* get_frame() {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 long calculate_region(long motionData[]){
-  int maxMotionValue = 0;     // To track the maximum motion value for any region
-  int regionWithMaxMotion = 0; // To store the region with the most detected motion
-  int motionValueInRegion = 0; // Temporary variable for the motion value in the current region
+  int maxMotionValue = 0;       // To track the maximum motion value for any region
+  int regionWithMaxMotion = 0;  // To store the region with the most detected motion
+  int motionValueInRegion = 0;  // Temporary variable for the motion value in the current region
   char binaryRepresentation[9]; // To hold the binary string representation for each region
   binaryRepresentation[8] = '\0';  // Null-terminate the string
   // Loop over all regions (WIM_REGIONS is the total number of regions)
@@ -366,23 +381,11 @@ long calculate_region(long motionData[]){
     }
   }
   // Print the region with the most activity
-  Serial.print("Most activity in block region: ");
-  Serial.println(regionWithMaxMotion);
   return regionWithMaxMotion;
 }
 
-void stepper_init(){
-  pinMode(STEP_IN1, OUTPUT);
-  pinMode(STEP_IN2, OUTPUT);
-  pinMode(STEP_IN3, OUTPUT);
-  pinMode(STEP_IN4, OUTPUT);
-  motor.moveToPositionInSteps(0);
-  motor.moveToPositionInSteps(STEPS_PER_DEGREE*10);
-  motor.moveToPositionInSteps(0);
-}
 
 void moveStepperMotor() {
-    // Stepper Movement - Move by steps so we capture more motion frames. 
     if(currentMP>moveTP){
         currentMP-=ceil((currentMP-moveTP)/2);
         if(ceil((currentMP-moveTP)/2)==0){
@@ -396,22 +399,37 @@ void moveStepperMotor() {
     }else {
       currentMP=moveTP;
     }
-#if SERIAL
-    if(currentMP!=moveTP){
-        Serial.print("moveTP: ");   
-        Serial.print(moveTP);   
-        Serial.print(" CURRENT: ");   
-        Serial.println(currentMP);   
+    #if SERIAL
+    if(moveTP!=currentMP){
+      Serial.println("[STEPPER]> moveTP: "+String(moveTP));
+      Serial.println("[STEPPER]> CURRENT: "+String(currentMP));
+      myStepper.step(currentMP);
     }
-#endif
-    motor.moveToPositionInSteps(currentMP);
+    #endif
+
 }
 
-void testStepper() {
-  motor.moveToPositionInSteps(4096);  // 4096 passi per un giro completo
-  delay(1000);  // Pausa di 1 secondo prima di cambiare direzione
-  motor.moveToPositionInSteps(-4096);  // 4096 passi per tornare alla posizione originale
-  return;
+void stepper_init(){
+  myStepper.setSpeed(10);
+}
+
+void tasks_init(){
+  tasks.addTask(stepperTask);
+  stepperTask.enable();
+  #if SERIAL
+  Serial.println("[SCHEDULER]> Tasks setup succesfully");
+  #endif
+}
+void mystepperTest(){
+  #if SERIAL
+    Serial.println("[MOTOR]> Rotating forward "+String(STEPS_PER_REVOLUTION)+" steps...");
+  #endif
+  myStepper.step(STEPS_PER_REVOLUTION);
+  delay(2000);
+  #if SERIAL
+    Serial.println("[MOTOR]> Rotating backwards "+String(STEPS_PER_REVOLUTION)+" steps...");
+  #endif
+  myStepper.step(-STEPS_PER_REVOLUTION);
 }
 
 
