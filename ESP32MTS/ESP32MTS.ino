@@ -16,7 +16,7 @@
 #define FRAME_BLOCK_SIZE              4 // maggiore è, minore è la precisione
 #define RES_WIDTH                     320
 #define RES_HEIGHT                    240
-#define SERIAL                        1
+#define SERIAL                        0
 #define FRAME_H                       (RES_HEIGHT/FRAME_BLOCK_SIZE)
 #define FRAME_W                       (RES_WIDTH/FRAME_BLOCK_SIZE)
 #define FRAME_SIZE                    FRAMESIZE_QVGA
@@ -42,7 +42,7 @@ uint16_t empty_frame[FRAME_H][FRAME_W]={0};
 long where_is_motion[VIEWPORT_PIXELS]={0};
 bool flag = false;
 int moveTP = 0;
-long region_movement=0;
+int region_movement=0;
 
 // stepper motor variables
 int currentMP=0; // Current Motor Position
@@ -66,34 +66,31 @@ void moveStepperMotor();
     tasks scheduler name
     enabled forever
 */
-Task stepperTask (1000, TASK_FOREVER, &moveStepperMotor);
+Task stepperTask (50, TASK_FOREVER, &moveStepperMotor);
 
 void setup() {
   Serial.begin(115200);
   pinMode(LED_PIN,OUTPUT);
-  // show esp32 diagnostics
-  #if SERIAL
-  showDiagnostics();
-  #endif
-  // Inizializzazione della fotocamera
-  #if SERIAL
-  Serial.println(camera_init(FRAME_SIZE,PIXFORMAT_GRAYSCALE) ? "CAMERA READY AND OK" : "ERROR INITIATING CAMERA");
-  #endif 
   stepper_init();
   tasks_init();
-  blinkFlash();
-  //mystepperTest();
+  bool camera=camera_init(FRAME_SIZE,PIXFORMAT_GRAYSCALE);
+  #if SERIAL
+  showDiagnostics();
+  Serial.println(camera ? "CAMERA READY AND OK" : "ERROR INITIATING CAMERA");
+  Serial.println("[SCHEDULER]> Tasks setup succesfully");
+  Serial.println("[STEPPER]> Stepper setup succesfully");
+  #endif 
+
   #if ENABLE_WEB_SERVER
-  // Connessione Wi-Fi
+  // if enable web server is set, activate wifi and start server
   connect_to_WIFI();
-  // Avvia il server web
   startCameraServer();
   #endif
-  tasks.startNow();
-  tasks.execute();
+  blinkFlash();
 }
 
 void loop() {
+  tasks.startNow();
   #if ENABLE_WEB_SERVER
   // Mantiene il webserver attivo
   server.handleClient();
@@ -136,7 +133,6 @@ void handle_jpg_stream() {
       #if ENABLE_WEB_SERVER
       server.send(503, "text/plain", "Impossible to capture frame");
       #endif
-
       return;
     }
 
@@ -148,18 +144,21 @@ void handle_jpg_stream() {
     #endif
     // managing disconnection
     bool motion=detect_motion();
-    region_movement=calculate_region(where_is_motion);
-    moveTP=((10-region_movement)*10)*STEPS_PER_DEGREE;
+
     if (flag && motion){
+      region_movement=calculate_region(where_is_motion);
+      moveTP=calculate_moveTP(region_movement);
       #if SERIAL
+      Serial.println("=====================================================================================================");
       Serial.println("[MOTION]> Motion detected");
       Serial.println("[MOTION]> Region: "+String(region_movement));
       Serial.println("[MOTION]> Moving to: "+String(moveTP));
-      Serial.println();
+      Serial.println("[MOTION]> Motion Array is: ");
       #endif
       clear_motion_buffer();
     }
     flag=true;
+
     // update previous frame. previous is now the latest captured
     update_prev_frame();
     // clean buffer
@@ -182,13 +181,21 @@ void blinkFlash(){
 }
 
 void clear_motion_buffer(){
+  #if SERIAL
+  Serial.print("[");
+  #endif
   for (uint16_t i = 0; i < VIEWPORT_PIXELS; i++) {
     #if SERIAL
+    if((i%PIXELS_IN_REGION)==0 && i!=0){
+      Serial.print(", ");
+    }
     Serial.print(where_is_motion[i]);
     #endif
     where_is_motion[i] = 0;
   }
-  Serial.println();
+  #if SERIAL
+  Serial.println("]");
+  #endif
 }
 
 void print_frame(uint16_t frame[FRAME_H][FRAME_W]) {
@@ -255,9 +262,33 @@ bool connect_to_WIFI(){
   Serial.println("[WIFI]> Wifi Connected");
   Serial.println("[WIFI]> IP: ");
   Serial.println(WiFi.localIP());
-  blinkFlash();
   #endif
   return true;
+}
+
+void update_prev_frame() {
+  memcpy( prev_frame, current_frame, sizeof(prev_frame)); 
+}
+
+void stepper_init(){
+  myStepper.setSpeed(10);
+}
+
+void tasks_init(){
+  tasks.addTask(stepperTask);
+  stepperTask.enable();
+}
+
+int find_max_region(int arr[]) {
+    int index=0;
+    int maxVal = arr[0];
+    for (int i = 1; i < WIM_REGIONS; i++) {
+        if(arr[i]>=maxVal){
+          maxVal=arr[i];
+          index=i;
+        }
+    }
+    return index;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -266,6 +297,12 @@ bool connect_to_WIFI(){
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+int calculate_moveTP(int region_movement) {
+  // 5 is the middle region
+  int center_region = 5;
+  int offset = (region_movement) - center_region;
+  return offset * 10 * STEPS_PER_DEGREE;
+}
 
 /**
  * Detects motion by comparing the current frame to the previous frame.
@@ -309,9 +346,7 @@ bool detect_motion() {
   return (1.0*changed_blocks/total_blocks) > MOTION_DETECTION_THRESHOLD;
 }
 
-void update_prev_frame() {
-  memcpy( prev_frame, current_frame, sizeof(prev_frame)); 
-}
+
 
 /**
  * Captures a frame from the camera and processes it into blocks.
@@ -358,7 +393,7 @@ camera_fb_t* get_frame() {
 ////////////////////////////////////////// STEPPER MANAGEMENT /////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+/*
 long calculate_region(long motionData[]){
   int maxMotionValue = 0;       // To track the maximum motion value for any region
   int regionWithMaxMotion = 0;  // To store the region with the most detected motion
@@ -382,44 +417,38 @@ long calculate_region(long motionData[]){
   }
   // Print the region with the most activity
   return regionWithMaxMotion;
-}
+}*/
 
+int calculate_region(long motion_view[]){
+  char binary_reppresentation[9];
+  binary_reppresentation[8]='\0';
+  int region_movement_array[WIM_REGIONS];
+  int region_counter=0;
+  for(int motion_element=0; motion_element<VIEWPORT_PIXELS; motion_element++){
+    binary_reppresentation[motion_element%(PIXELS_IN_REGION-1)]=((motion_view[motion_element]==1)?'1':'0');
+    if((motion_element%(PIXELS_IN_REGION-1)==0) && motion_element!=0){
+      region_movement_array[region_counter]=(int)strtol(binary_reppresentation,NULL,2);
+      region_counter++;
+    }
+  }
+  return find_max_region(region_movement_array);
+
+}
 
 void moveStepperMotor() {
-    if(currentMP>moveTP){
-        currentMP-=ceil((currentMP-moveTP)/2);
-        if(ceil((currentMP-moveTP)/2)==0){
-          currentMP=moveTP;
-        }
-    }else if(currentMP<moveTP){
-        currentMP+=floor((moveTP-currentMP)/2);
-        if(floor((moveTP-currentMP)/2)==0){
-          currentMP=moveTP;
-        }
-    }else {
-      currentMP=moveTP;
+    // Sposta direttamente alla posizione target
+    if (currentMP!=moveTP){
+      #if SERIAL
+      Serial.println("[STEPPER]> moveTP: " + String(moveTP));
+      Serial.println("[STEPPER]> CURRENT: " + String(currentMP));
+      #endif
+      myStepper.step(moveTP);
     }
-    #if SERIAL
-    if(moveTP!=currentMP){
-      Serial.println("[STEPPER]> moveTP: "+String(moveTP));
-      Serial.println("[STEPPER]> CURRENT: "+String(currentMP));
-      myStepper.step(currentMP);
-    }
-    #endif
-
+    moveTP=0;
+    currentMP = 0; 
 }
 
-void stepper_init(){
-  myStepper.setSpeed(10);
-}
 
-void tasks_init(){
-  tasks.addTask(stepperTask);
-  stepperTask.enable();
-  #if SERIAL
-  Serial.println("[SCHEDULER]> Tasks setup succesfully");
-  #endif
-}
 void mystepperTest(){
   #if SERIAL
     Serial.println("[MOTOR]> Rotating forward "+String(STEPS_PER_REVOLUTION)+" steps...");
