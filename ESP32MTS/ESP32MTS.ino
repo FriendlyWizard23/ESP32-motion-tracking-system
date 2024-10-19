@@ -8,31 +8,35 @@
 #include "camera_pins.h"
 
 /// SKETCH DEFINITIONS
-#define USE_2BYJ48                      0
+// CONFIG DEFINITIONS
+#define SERIAL                          1
 #define ENABLE_WEB_SERVER               0
-#define CAMERA_MODEL_AI_THINKER                               
+#define CAMERA_MODEL_AI_THINKER
+// RESOLUTION DEFINITIONS
+#define FRAME_SIZE                      FRAMESIZE_QVGA
+#define RES_WIDTH                       320
+#define RES_HEIGHT                      240
+// MOTION DEFINITIONS                               
 #define MOTION_DETECTION_THRESHOLD      0
 #define FRAME_BLOCK_DIFF_THRESHOLD      0.8
 #define FRAME_BLOCK_SIZE                4 // maggiore è, minore è la precisione
-#define RES_WIDTH                       320
-#define RES_HEIGHT                      240
-#define SERIAL                          1
+// BLOCKS DEFINITIONS
 #define FRAME_H                         (RES_HEIGHT/FRAME_BLOCK_SIZE)
 #define FRAME_W                         (RES_WIDTH/FRAME_BLOCK_SIZE)
-#define FRAME_SIZE                      FRAMESIZE_QVGA
 #define VIEWPORT_PIXELS                 (RES_WIDTH/FRAME_BLOCK_SIZE)
+// REGIONS DEFINITIONS
 #define WIM_REGIONS                     10
 #define PIXELS_IN_REGION                (VIEWPORT_PIXELS/WIM_REGIONS)
+#define MID_REGION                      floor((WIM_REGIONS+1)/2)
+// STEPPER DEFINITIONS
 #define STEPS_PER_DEGREE                6 
 #define STEPS_PER_REVOLUTION            2048
 #define STEPS_PER_SECOND                4096
-#define ACCELLERATION_STEPS_PER_SECOND  256                       // How quickly the movement accellerates
-#define STEPPER_RPM                     (STEPS_PER_SECOND * 60) / STEPS_PER_REVOLUTION
+#define ACCELLERATION_STEPS_PER_SECOND  256
+#define STEPPER_RPM                     10
 
 WebServer server(80);
 WiFiClient client;
-
-
 // Frame variables
 camera_fb_t *fb;
 uint16_t prev_frame[FRAME_H][FRAME_W]={0};
@@ -52,8 +56,11 @@ const uint8_t STEP_IN1 = 12;
 const uint8_t STEP_IN2= 13;
 const uint8_t STEP_IN3= 14;
 const uint8_t STEP_IN4 = 15;
+Stepper generic_stepper(STEPS_PER_REVOLUTION,STEP_IN1,STEP_IN3,STEP_IN2,STEP_IN4);
 
-TinyStepper_28BYJ_48 stepper_28byj48;
+// Variabiles to track previous movement
+int previous_moveTP = 0;    // Previous destination target position
+int correction_factor = 5;  // Weighted correction factor
 
 // laser stuff
 bool youcantjustshootawholeintothesurfaceofmars=false;
@@ -62,7 +69,7 @@ const uint8_t LASER_IN=2;
 // Scheduler
 Scheduler tasks;
 void moveStepperMotor();
-Task stepperTask (50, TASK_FOREVER, &moveStepperMotor);
+Task stepperTask (1, TASK_FOREVER, &moveStepperMotor);
 void get_frame();
 Task getframeTask(30,TASK_FOREVER, &get_frame);
 void send_jpg_frame();
@@ -179,8 +186,15 @@ void send_jpg_frame() {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int calculate_moveTP(int region){
-  return ((10-region)*10)*STEPS_PER_DEGREE;
+int calculate_moveTP(int region) {
+    int relative_region = region - MID_REGION;
+    int moveTP = relative_region * WIM_REGIONS * STEPS_PER_DEGREE;
+    int delta = moveTP - previous_moveTP;
+    if (abs(delta) > correction_factor) {
+        moveTP += delta / 2; 
+    }
+    previous_moveTP = moveTP;
+    return moveTP;
 }
 
 /**
@@ -260,14 +274,13 @@ void get_frame() {
 
 
 int calculate_region(long motion_view[]){
-  char binary_reppresentation[9];
-  binary_reppresentation[8]='\0';
+  int cur_region[PIXELS_IN_REGION];
   int region_movement_array[WIM_REGIONS];
   int region_counter=0;
   for(int motion_element=0; motion_element<VIEWPORT_PIXELS; motion_element++){
-    binary_reppresentation[motion_element%(PIXELS_IN_REGION-1)]=((motion_view[motion_element]==1)?'1':'0');
+    cur_region[motion_element%(PIXELS_IN_REGION-1)]=motion_view[motion_element];
     if((motion_element%(PIXELS_IN_REGION-1)==0) && motion_element!=0){
-      region_movement_array[region_counter]=(int)strtol(binary_reppresentation,NULL,2);
+      region_movement_array[region_counter]=count_ones_in_region(cur_region);
       region_counter++;
     }
   }
@@ -275,23 +288,22 @@ int calculate_region(long motion_view[]){
 
 }
 
-void moveStepperMotor(){
-    // Stepper Movement - Move by steps so we capture more motion frames. 
-    if(currentMP>moveTP){
-        currentMP-=ceil((currentMP-moveTP)/2);
-        if(ceil((currentMP-moveTP)/2)==0){
-          currentMP=moveTP;
+void moveStepperMotor() {
+    // difference between target and current position
+    int distance_to_target = moveTP - currentMP;
+    // if target is yet to be reached
+    if (distance_to_target != 0) {
+        // take half of the distance as steps to be taken
+        int step_to_take = distance_to_target / 2;
+        // if movement is too small at least do one step
+        if (abs(step_to_take) < 1) {
+            step_to_take = distance_to_target; // final step
         }
-    }else if(currentMP<moveTP){
-        currentMP+=floor((moveTP-currentMP)/2);
-        if(floor((moveTP-currentMP)/2)==0){
-          currentMP=moveTP;
-        } 
-    }else{
-      currentMP=moveTP;
-    }
-    stepper_28byj48.moveToPositionInSteps(currentMP);
-    
+        // moving stepper to number of steps needed
+        generic_stepper.step(step_to_take);
+        // updatieng current steps
+        currentMP += step_to_take;
+    } 
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -382,6 +394,16 @@ void emit_nuclear_laser_beam(){
     digitalWrite(LASER_IN,LOW);
   }
 }
+
+int count_ones_in_region(int region[]){
+  int ones=0;
+  for(int i=0; i<PIXELS_IN_REGION;i++){
+    if (region[i]==1){
+      ones++;
+    }
+  }
+  return ones;
+}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////// GENERAL INITS /////////////////////////////////////////////
@@ -389,9 +411,7 @@ void emit_nuclear_laser_beam(){
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void stepper_init(){
-  stepper_28byj48.connectToPins(STEP_IN1, STEP_IN2, STEP_IN3, STEP_IN4);
-  stepper_28byj48.setSpeedInStepsPerSecond(STEPS_PER_SECOND);
-  stepper_28byj48.setAccelerationInStepsPerSecondPerSecond(ACCELLERATION_STEPS_PER_SECOND);
+  generic_stepper.setSpeed(STEPPER_RPM);
 }
 
 void tasks_init(){
