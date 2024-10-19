@@ -8,6 +8,7 @@
 #include "camera_pins.h"
 
 /// SKETCH DEFINITIONS
+#define USE_2BYJ48                      0
 #define ENABLE_WEB_SERVER               0
 #define CAMERA_MODEL_AI_THINKER                               
 #define MOTION_DETECTION_THRESHOLD      0
@@ -26,6 +27,7 @@
 #define STEPS_PER_REVOLUTION            2048
 #define STEPS_PER_SECOND                4096
 #define ACCELLERATION_STEPS_PER_SECOND  256                       // How quickly the movement accellerates
+#define STEPPER_RPM                     (STEPS_PER_SECOND * 60) / STEPS_PER_REVOLUTION
 
 WebServer server(80);
 WiFiClient client;
@@ -44,18 +46,18 @@ int moveTP = 0;
 int region_movement=0;
 
 // stepper motor variables
+
 int currentMP=0; // Current Motor Position
 const uint8_t STEP_IN1 = 12;
 const uint8_t STEP_IN2= 13;
 const uint8_t STEP_IN3= 14;
 const uint8_t STEP_IN4 = 15;
 
+TinyStepper_28BYJ_48 stepper_28byj48;
+
 // laser stuff
 bool youcantjustshootawholeintothesurfaceofmars=false;
 const uint8_t LASER_IN=2;
-
-// scheduler stuff
-TinyStepper_28BYJ_48 stepper;
 
 // Scheduler
 Scheduler tasks;
@@ -71,7 +73,7 @@ Task emitnuclearlaserbeamTask(10,TASK_FOREVER, &emit_nuclear_laser_beam);
 void setup() {
   Serial.begin(115200);
   pinMode(LED_PIN,OUTPUT);
-  stepper_init_28BYJ48();
+  stepper_init();
   tasks_init();
   laser_init();
   bool camera=camera_init(FRAME_SIZE,PIXFORMAT_GRAYSCALE);
@@ -273,18 +275,23 @@ int calculate_region(long motion_view[]){
 
 }
 
-void moveStepperMotor() {
+void moveStepperMotor(){
     // Stepper Movement - Move by steps so we capture more motion frames. 
     if(currentMP>moveTP){
         currentMP-=ceil((currentMP-moveTP)/2);
-        if(ceil((currentMP-moveTP)/2)==0) currentMP=moveTP;
+        if(ceil((currentMP-moveTP)/2)==0){
+          currentMP=moveTP;
+        }
     }else if(currentMP<moveTP){
         currentMP+=floor((moveTP-currentMP)/2);
-        if(floor((moveTP-currentMP)/2)==0) currentMP=moveTP;
-    }else {
+        if(floor((moveTP-currentMP)/2)==0){
+          currentMP=moveTP;
+        } 
+    }else{
       currentMP=moveTP;
     }
-    stepper.moveToPositionInSteps(moveTP);
+    stepper_28byj48.moveToPositionInSteps(currentMP);
+    
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -381,10 +388,10 @@ void emit_nuclear_laser_beam(){
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void stepper_init_28BYJ48(){
-    stepper.connectToPins(STEP_IN1, STEP_IN2, STEP_IN3, STEP_IN4);
-    stepper.setSpeedInStepsPerSecond(STEPS_PER_SECOND);
-    stepper.setAccelerationInStepsPerSecondPerSecond(ACCELLERATION_STEPS_PER_SECOND);   
+void stepper_init(){
+  stepper_28byj48.connectToPins(STEP_IN1, STEP_IN2, STEP_IN3, STEP_IN4);
+  stepper_28byj48.setSpeedInStepsPerSecond(STEPS_PER_SECOND);
+  stepper_28byj48.setAccelerationInStepsPerSecondPerSecond(ACCELLERATION_STEPS_PER_SECOND);
 }
 
 void tasks_init(){
