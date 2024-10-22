@@ -34,9 +34,45 @@
 #define STEPS_PER_SECOND                4096
 #define ACCELLERATION_STEPS_PER_SECOND  256
 #define STEPPER_RPM                     10
+// BUZZER DEFINITIONS
+#define USE_BUZZER                      1
+// Definizione delle frequenze delle note musicali
+#define NOTE_C4  262
+#define NOTE_D4  294
+#define NOTE_E4  330
+#define NOTE_F4  349
+#define NOTE_G4  392
+#define NOTE_A4  440
+#define NOTE_B4  494
+#define NOTE_C5  523
+#define NOTE_D5  587
+#define NOTE_E5  659
+#define NOTE_F5  698
+#define NOTE_G5  784
 
+// Note
+int melody[] = {
+  NOTE_G4, NOTE_G4, NOTE_E4, NOTE_G4, NOTE_A4, NOTE_G4, NOTE_E4, NOTE_C5,
+  NOTE_D5, NOTE_E5, NOTE_G4, NOTE_G4, NOTE_E4, NOTE_G4, NOTE_A4, NOTE_G4,
+  NOTE_E4, NOTE_C5, NOTE_D5, NOTE_E5, NOTE_G4, NOTE_A4, NOTE_G4, NOTE_E4,
+  NOTE_F5, NOTE_E5, NOTE_D5, NOTE_C5, NOTE_B4, NOTE_C5, NOTE_D5, NOTE_E5
+};
+
+// Durata delle note corrispondente (1 = una croma, 2 = una semi-breve, ecc.)
+int noteDurations[] = {
+  4, 4, 4, 4, 4, 4, 4, 4,
+  4, 4, 4, 4, 4, 4, 4, 4,
+  4, 4, 4, 4, 4, 4, 4, 4,
+  4, 4, 4, 4, 4, 4, 4, 4
+};
+
+// WebServer variables
 WebServer server(80);
 WiFiClient client;
+
+// Buzzer Variables
+const uint8_t BUZZER_IN = 2;
+
 // Frame variables
 camera_fb_t *fb;
 uint16_t prev_frame[FRAME_H][FRAME_W]={0};
@@ -50,7 +86,6 @@ int moveTP = 0;
 int region_movement=0;
 
 // stepper motor variables
-
 int currentMP=0; // Current Motor Position
 const uint8_t STEP_IN1 = 12;
 const uint8_t STEP_IN2= 13;
@@ -82,6 +117,10 @@ void setup() {
   pinMode(LED_PIN,OUTPUT);
   stepper_init();
   tasks_init();
+  #if USE_BUZZER
+  buzzer_init();
+  playSound();
+  #endif
   laser_init();
   bool camera=camera_init(FRAME_SIZE,PIXFORMAT_GRAYSCALE);
   #if SERIAL
@@ -97,7 +136,7 @@ void setup() {
   connect_to_WIFI();
   startCameraServer();
   #endif
-
+  stepperTest();
   blinkFlash();
   tasks.startNow();
 }
@@ -237,6 +276,10 @@ bool detect_motion() {
   //clear_motion_buffer();
   // if the number of blocks that show differences are above threshold, yes, there is motion.
   return (1.0*changed_blocks/total_blocks) > MOTION_DETECTION_THRESHOLD;
+}
+
+bool naive_motion_detect(){
+
 }
 
 void get_frame() {
@@ -404,6 +447,16 @@ int count_ones_in_region(int region[]){
   }
   return ones;
 }
+
+void stepperTest(){
+  generic_stepper.step(STEPS_PER_REVOLUTION/2);
+  delay(1000);
+  generic_stepper.step(-STEPS_PER_REVOLUTION/2);
+}
+
+void playSound() {
+  tone(BUZZER_IN,1000,2000);
+}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////// GENERAL INITS /////////////////////////////////////////////
@@ -466,4 +519,8 @@ void laser_init(){
     delay(2000);
     digitalWrite(LASER_IN,LOW);
     delay(2000);
+}
+
+void buzzer_init(){
+  pinMode(BUZZER_IN,OUTPUT);
 }
