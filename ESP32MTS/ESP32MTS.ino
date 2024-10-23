@@ -12,13 +12,16 @@
 #define SERIAL                          1
 #define ENABLE_WEB_SERVER               0
 #define CAMERA_MODEL_AI_THINKER
+#define USE_BUZZER                      0
+#define POTENZIOMETER                   1
+#define FIX_HOMING                      1
 // RESOLUTION DEFINITIONS
 #define FRAME_SIZE                      FRAMESIZE_QVGA
 #define RES_WIDTH                       320
 #define RES_HEIGHT                      240
 // MOTION DEFINITIONS                               
 #define MOTION_DETECTION_THRESHOLD      0
-#define FRAME_BLOCK_DIFF_THRESHOLD      0.8
+#define FRAME_BLOCK_DIFF_THRESHOLD      0.9
 #define FRAME_BLOCK_SIZE                4 // maggiore è, minore è la precisione
 // BLOCKS DEFINITIONS
 #define FRAME_H                         (RES_HEIGHT/FRAME_BLOCK_SIZE)
@@ -34,8 +37,9 @@
 #define STEPS_PER_SECOND                4096
 #define ACCELLERATION_STEPS_PER_SECOND  256
 #define STEPPER_RPM                     10
-// BUZZER DEFINITIONS
-#define USE_BUZZER                      1
+// POTENZIOMETER DEFINITIONS
+#define POTENZIOMETER_THRESHOLD         300
+
 // Definizione delle frequenze delle note musicali
 #define NOTE_C4  262
 #define NOTE_D4  294
@@ -50,28 +54,20 @@
 #define NOTE_F5  698
 #define NOTE_G5  784
 
-// Note
-int melody[] = {
-  NOTE_G4, NOTE_G4, NOTE_E4, NOTE_G4, NOTE_A4, NOTE_G4, NOTE_E4, NOTE_C5,
-  NOTE_D5, NOTE_E5, NOTE_G4, NOTE_G4, NOTE_E4, NOTE_G4, NOTE_A4, NOTE_G4,
-  NOTE_E4, NOTE_C5, NOTE_D5, NOTE_E5, NOTE_G4, NOTE_A4, NOTE_G4, NOTE_E4,
-  NOTE_F5, NOTE_E5, NOTE_D5, NOTE_C5, NOTE_B4, NOTE_C5, NOTE_D5, NOTE_E5
-};
-
-// Durata delle note corrispondente (1 = una croma, 2 = una semi-breve, ecc.)
-int noteDurations[] = {
-  4, 4, 4, 4, 4, 4, 4, 4,
-  4, 4, 4, 4, 4, 4, 4, 4,
-  4, 4, 4, 4, 4, 4, 4, 4,
-  4, 4, 4, 4, 4, 4, 4, 4
-};
-
 // WebServer variables
 WebServer server(80);
 WiFiClient client;
 
 // Buzzer Variables
-const uint8_t BUZZER_IN = 2;
+const uint8_t BUZZER_IN = 4;
+
+// Potenziometer variable
+const uint8_t POTENZIOMETER_IN=2;
+int fix_position_current_val;
+int fix_position_prev_val;
+const unsigned long stableTime = 4000;  
+unsigned long lastStableTime = 0; 
+bool isConfirmed = false;        
 
 // Frame variables
 camera_fb_t *fb;
@@ -116,27 +112,41 @@ void setup() {
   Serial.begin(115200);
   pinMode(LED_PIN,OUTPUT);
   stepper_init();
+  stepperTest();
   tasks_init();
-  #if USE_BUZZER
-  buzzer_init();
-  playSound();
-  #endif
   laser_init();
   bool camera=camera_init(FRAME_SIZE,PIXFORMAT_GRAYSCALE);
   #if SERIAL
   showDiagnostics();
-  Serial.println(camera ? "CAMERA READY AND OK" : "ERROR INITIATING CAMERA");
+  Serial.println(camera ? "CAMERA READY AND OK" : "ERROR INITIATING CAMERA.");
   Serial.println("[SCHEDULER]> Tasks setup succesfully.");
   Serial.println("[STEPPER]> Stepper setup succesfully.");
   Serial.println("[BFG DIVISION]> Laser Beam Ready.");
+    #if USE_BUZZER
+    disableFlash();
+    buzzer_init();
+    playSound();
+    Serial.println("[BUZZER]> Nuclear Siren Ready.");
+    #endif
   #endif 
-
   #if ENABLE_WEB_SERVER
   // if ENABLE_WEB_SERVER is set, activate wifi and start server
   connect_to_WIFI();
   startCameraServer();
   #endif
-  stepperTest();
+
+  #if FIX_HOMING
+    #if SERIAL
+    Serial.println("[STEPPER]> ! Move the potentiometer to adjust home position. !");
+    #endif
+    fix_stepper_position();
+    #if SERIAL
+    Serial.println("[STEPPER]> ! Homing calibration phase terminated !");
+    #endif
+  #endif
+
+  
+  // Final Blink to acknolwedge it's all good
   blinkFlash();
   tasks.startNow();
 }
@@ -433,6 +443,9 @@ int find_max_region(int arr[]) {
 void emit_nuclear_laser_beam(){
   if (currentMP == moveTP) {
     digitalWrite(LASER_IN,HIGH);
+    #if USE_BUZZER
+    playSound();
+    #endif
   }else{
     digitalWrite(LASER_IN,LOW);
   }
@@ -456,6 +469,31 @@ void stepperTest(){
 
 void playSound() {
   tone(BUZZER_IN,1000,2000);
+}
+
+void disableFlash() {
+  pinMode(4, OUTPUT);  
+  digitalWrite(4, LOW); 
+}
+
+void fix_stepper_position() {
+  while (!isConfirmed) {
+    int currentPosition = analogRead(POTENZIOMETER_IN);
+    if (abs(currentPosition - fix_position_prev_val) < POTENZIOMETER_THRESHOLD) {
+      if (millis() - lastStableTime > stableTime) {
+        #if SERIAL
+        Serial.println("[STEPPER]> Position Set.");
+        #endif
+        isConfirmed = true;
+        break;
+      }
+    } else {
+      lastStableTime = millis();
+    }
+    generic_stepper.step(currentPosition - fix_position_prev_val);
+    fix_position_prev_val = currentPosition;
+  }
+  pinMode(POTENZIOMETER_IN,OUTPUT);
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -523,4 +561,8 @@ void laser_init(){
 
 void buzzer_init(){
   pinMode(BUZZER_IN,OUTPUT);
+}
+
+void potenziometer_init(){
+  pinMode(POTENZIOMETER_IN,INPUT);
 }
