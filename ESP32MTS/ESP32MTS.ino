@@ -14,14 +14,14 @@
 #define CAMERA_MODEL_AI_THINKER
 #define USE_BUZZER                      0
 #define POTENZIOMETER                   1
-#define FIX_HOMING                      1
+#define FIX_HOMING                      0
 // RESOLUTION DEFINITIONS
 #define FRAME_SIZE                      FRAMESIZE_QVGA
 #define RES_WIDTH                       320
 #define RES_HEIGHT                      240
 // MOTION DEFINITIONS                               
 #define MOTION_DETECTION_THRESHOLD      0
-#define FRAME_BLOCK_DIFF_THRESHOLD      0.9
+#define FRAME_BLOCK_DIFF_THRESHOLD      0.7
 #define FRAME_BLOCK_SIZE                4 // maggiore è, minore è la precisione
 // BLOCKS DEFINITIONS
 #define FRAME_H                         (RES_HEIGHT/FRAME_BLOCK_SIZE)
@@ -38,7 +38,7 @@
 #define ACCELLERATION_STEPS_PER_SECOND  256
 #define STEPPER_RPM                     10
 // POTENZIOMETER DEFINITIONS
-#define POTENZIOMETER_THRESHOLD         300
+#define POTENZIOMETER_THRESHOLD         500
 
 // Definizione delle frequenze delle note musicali
 #define NOTE_C4  262
@@ -94,15 +94,15 @@ int previous_moveTP = 0;    // Previous destination target position
 int correction_factor = 5;  // Weighted correction factor
 
 // laser stuff
-bool youcantjustshootawholeintothesurfaceofmars=false;
+bool youcantjustshootaholeintothesurfaceofmars=false;
 const uint8_t LASER_IN=2;
 
 // Scheduler
 Scheduler tasks;
 void moveStepperMotor();
-Task stepperTask (1, TASK_FOREVER, &moveStepperMotor);
+Task stepperTask (10, TASK_FOREVER, &moveStepperMotor);
 void get_frame();
-Task getframeTask(30,TASK_FOREVER, &get_frame);
+Task getframeTask(10,TASK_FOREVER, &get_frame);
 void send_jpg_frame();
 Task sendjpgframeTask(10,TASK_FOREVER, &send_jpg_frame);
 void emit_nuclear_laser_beam();
@@ -112,7 +112,7 @@ void setup() {
   Serial.begin(115200);
   pinMode(LED_PIN,OUTPUT);
   stepper_init();
-  stepperTest();
+  //stepperTest();
   tasks_init();
   laser_init();
   bool camera=camera_init(FRAME_SIZE,PIXFORMAT_GRAYSCALE);
@@ -163,11 +163,15 @@ void loop() {
     #if SERIAL
     Serial.println("=====================================================================================================");
     Serial.println("[MOTION]> Motion detected");
-    Serial.println("[MOTION]> Region: "+String(region_movement));
-    Serial.println("[MOTION]> Moving to: "+String(moveTP));
+    Serial.println("[MOTION]> Region with more motion: "+String(region_movement));
+    Serial.println("[MOTION]> Moving To: "+String(moveTP));
     Serial.println("[MOTION]> Motion Array is: ");
+    
     #endif
     clear_motion_buffer();
+    #if SERIAL
+    Serial.println("=====================================================================================================");
+    #endif
   }
   flag=true;
 
@@ -276,6 +280,7 @@ bool detect_motion() {
         where_is_motion[x] = 1;
         changed_blocks++;
       }
+
     }
   }
   // if no blocks are showing diffs it returns false.
@@ -290,6 +295,10 @@ bool detect_motion() {
 
 bool naive_motion_detect(){
 
+}
+
+bool naive_get_frame(){
+  
 }
 
 void get_frame() {
@@ -326,20 +335,23 @@ void get_frame() {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-int calculate_region(long motion_view[]){
-  int cur_region[PIXELS_IN_REGION];
-  int region_movement_array[WIM_REGIONS];
-  int region_counter=0;
-  for(int motion_element=0; motion_element<VIEWPORT_PIXELS; motion_element++){
-    cur_region[motion_element%(PIXELS_IN_REGION-1)]=motion_view[motion_element];
-    if((motion_element%(PIXELS_IN_REGION-1)==0) && motion_element!=0){
-      region_movement_array[region_counter]=count_ones_in_region(cur_region);
+int calculate_region(long motion_view[]) {
+  int cur_region[PIXELS_IN_REGION];  
+  int region_movement_array[WIM_REGIONS];  
+  int region_counter = 0;  
+  int pixel_in_region_counter = 0;
+  for (int motion_element = 0; motion_element < VIEWPORT_PIXELS; motion_element++) {
+    cur_region[pixel_in_region_counter] = motion_view[motion_element];
+    pixel_in_region_counter++;
+    if (pixel_in_region_counter == PIXELS_IN_REGION) {
+      region_movement_array[region_counter] = count_ones_in_region(cur_region);
       region_counter++;
+      pixel_in_region_counter = 0; 
     }
   }
   return find_max_region(region_movement_array);
-
 }
+
 
 void moveStepperMotor() {
     // difference between target and current position
@@ -428,7 +440,15 @@ void update_prev_frame() {
   memcpy( prev_frame, current_frame, sizeof(prev_frame)); 
 }
 
+void printArray(int arr[]){
+  for(int i = 0; i < WIM_REGIONS; i++){
+    Serial.print(arr[i]);
+    Serial.print(" ");
+  }
+}
+
 int find_max_region(int arr[]) {
+
     int index=0;
     int maxVal = arr[0];
     for (int i = 1; i < WIM_REGIONS; i++) {
