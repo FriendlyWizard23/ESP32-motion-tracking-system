@@ -14,14 +14,15 @@ It is also possible, as explained below, enable a real-time WebServer to observe
 - **Power Supply**: External 9V power supply for the stepper motor and USB or 3.3V for the microcontroller.
 
 ### Functionality:
-    The Precision Tracker system is capable of detecting motion by comparing consecutive video frames captured by the camera module. 
-    When motion is detected, the stepper motor adjusts its position to follow the movement of the object. The entire process is controlled by the ESP32 microcontroller, which processes real-time data.
+ 
+When motion is detected inside the camera's FOV, the stepper motor adjusts its position to follow the movement of the object. As soon as the detected motion results "still" and the motor has reached the "final" position, a laser beam is shot in the moving entitiy's direction. The entire process is controlled by the ESP32 microcontroller, which processes erything in real-time.
 
 ### Key Features:
-- **Real-time Motion Detection**: Utilizes a camera module to capture frames and detect motion through pixel comparison.
-- **Automated Targeting**: The stepper motor adjusts its position automatically to follow moving objects.
+- **Real-time Motion Detection**: Utilizes the ESP32's camera module to capture frames and detect motion through pixel comparison.
+- **Automated Targeting**: The stepper motor adjusts its position automatically to follow moving entities inside the camera's Field of View.
 - **Customizable Parameters**: Thresholds for motion detection, speed of the stepper motor, and frame resolution can be fine-tuned for specific use cases.
-- **Expandable Architecture**: The system can be expanded with additional sensors or motors for more complex applications.
+
+- **(BETA) Stepper Motor Homing**: by using a potentiometer it's possible to set the stepper home position each time the system is powered up. This  could  
 - **Real-Time WebServer**: if enabled it is possible to connect to x.x.x.x/stream and observe the real time stream of the camera.
 
 ### How It Works:
