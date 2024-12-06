@@ -12,7 +12,6 @@
 #define SERIAL                          1
 #define ENABLE_WEB_SERVER               0
 #define CAMERA_MODEL_AI_THINKER
-#define USE_BUZZER                      0
 #define POTENZIOMETER                   1
 #define FIX_HOMING                      0
 // RESOLUTION DEFINITIONS
@@ -23,8 +22,6 @@
 // STEPPER DEFINITIONS
 #define STEPS_PER_DEGREE                6
 #define STEPS_PER_REVOLUTION            2048
-#define STEPS_PER_SECOND                4096
-#define ACCELLERATION_STEPS_PER_SECOND  256
 #define STEPPER_RPM                     10
 // POTENZIOMETER DEFINITIONS
 #define POTENZIOMETER_THRESHOLD         500
@@ -35,8 +32,6 @@
 #define CHANGE_THRESHOLD                65000
 #define HORIZONTAL_PIXELS_PER_REGION    floor(RES_WIDTH/REGIONS)      
 #define FOV_HORIZONTAL                  65
-#define SXDX_STEPS                      300
-#define STEPS_PER_REGION                floor(SXDX_STEPS*2/REGIONS)
 
 int current_region_sums[REGIONS];   
 int previous_region_sums[REGIONS];  
@@ -45,9 +40,6 @@ int regions_diff[REGIONS];
 // WebServer variables
 WebServer server(80);
 WiFiClient client;
-
-// Buzzer Variables
-const uint8_t BUZZER_IN = 4;
 
 // Potenziometer variable
 const uint8_t POTENZIOMETER_IN = 2;
@@ -106,12 +98,6 @@ void setup() {
   Serial.println("[SCHEDULER]> Tasks setup succesfully.");
   Serial.println("[STEPPER]> Stepper setup succesfully.");
   Serial.println("[BFG DIVISION]> Laser Beam Ready.");
-#if USE_BUZZER
-  disableFlash();
-  buzzer_init();
-  playSound();
-  Serial.println("[BUZZER]> Nuclear Siren Ready.");
-#endif
 #endif
 #if ENABLE_WEB_SERVER
   // if ENABLE_WEB_SERVER is set, activate wifi and start server
@@ -212,19 +198,6 @@ void send_jpg_frame() {
 ////////////////////////////////////////// MOTION MANAGEMENT ///////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
-/*
-int calculate_moveTP(int region) {
-   // int relative_region = region - MID_REGION;
-   // int target_moveTP = relative_region * REGIONS * STEPS_PER_DEGREE;
-   // return target_moveTP;
-
-    int relative_region = region - MID_REGION; // Distanza della regione dal centro
-    int region_width = RES_WIDTH / REGIONS;   // Larghezza di una singola regione in pixel
-    int pixel_distance = relative_region * region_width; // Distanza totale in pixel
-    int target_moveTP = (pixel_distance * STEPS_PER_REVOLUTION) / RES_WIDTH;
-    return target_moveTP;
-}
-*/
 
 int calculate_moveTP(int region) {
     int relative_region = region - MID_REGION;
@@ -233,8 +206,6 @@ int calculate_moveTP(int region) {
     int steps_to_move = angular_offset * STEPS_PER_DEGREE;
     return steps_to_move;
 }
-
-
 bool detect_motion() {
     int region_width = RES_WIDTH / REGIONS;
     memset(current_region_sums, 0, sizeof(current_region_sums));
@@ -264,11 +235,7 @@ void get_frame() {
     Serial.println("Errore durante la cattura del frame");
     return;
   }
-
-  // dimensione della regione in colonne
   int region_width = RES_WIDTH / REGIONS;
-
-  // calcolo delle somme per il frame corrente
   memset(current_region_sums, 0, sizeof(current_region_sums));
   for (int y = 0; y < RES_HEIGHT; y++) {
     for (int x = 0; x < RES_WIDTH; x++) {
@@ -359,12 +326,6 @@ bool connect_to_WIFI() {
 void emit_nuclear_laser_beam() {
   if (currentMP == moveTP) {
     digitalWrite(LASER_IN, HIGH);
-/*#if SERIAL
-  Serial.println("[BFG 10000]> SHOOTING A HOLE INTO THE SURFACE OF MARS...{"+String(currentMP)+";"+String(moveTP)+"}");
-#endif*/
-#if USE_BUZZER
-    playSound();
-#endif
   } else {
     digitalWrite(LASER_IN, LOW);
   }
