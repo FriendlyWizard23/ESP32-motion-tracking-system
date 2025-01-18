@@ -12,8 +12,6 @@
 #define SERIAL                          1
 #define ENABLE_WEB_SERVER               0
 #define CAMERA_MODEL_AI_THINKER
-#define POTENZIOMETER                   1
-#define FIX_HOMING                      0
 // RESOLUTION DEFINITIONS
 #define FRAME_SIZE                      FRAMESIZE_QVGA
 #define RES_WIDTH                       320
@@ -23,8 +21,6 @@
 #define STEPS_PER_DEGREE                6
 #define STEPS_PER_REVOLUTION            2048
 #define STEPPER_RPM                     10
-// POTENZIOMETER DEFINITIONS
-#define POTENZIOMETER_THRESHOLD         500
 
 //TEST
 #define REGIONS                         11
@@ -41,13 +37,6 @@ int regions_diff[REGIONS];
 WebServer server(80);
 WiFiClient client;
 
-// Potenziometer variable
-const uint8_t POTENZIOMETER_IN = 2;
-int fix_position_current_val;
-int fix_position_prev_val;
-const unsigned long stableTime = 4000;
-unsigned long lastStableTime = 0;
-bool isConfirmed = false;
 
 // Frame variables
 camera_fb_t *fb;
@@ -95,9 +84,9 @@ void setup() {
 #if SERIAL
   showDiagnostics();
   Serial.println(camera ? "CAMERA READY AND OK" : "ERROR INITIATING CAMERA.");
-  Serial.println("[SCHEDULER]> Tasks setup succesfully.");
-  Serial.println("[STEPPER]> Stepper setup succesfully.");
-  Serial.println("[BFG DIVISION]> Laser Beam Ready.");
+  Serial.println(F("[SCHEDULER]> Tasks setup succesfully."));
+  Serial.println(F("[STEPPER]> Stepper setup succesfully."));
+  Serial.println(F("[BFG DIVISION]> Laser Beam Ready."));
 #endif
 #if ENABLE_WEB_SERVER
   // if ENABLE_WEB_SERVER is set, activate wifi and start server
@@ -105,16 +94,7 @@ void setup() {
   startCameraServer();
 #endif
 
-#if FIX_HOMING
-#if SERIAL
-  Serial.println("[STEPPER]> ! Move the potentiometer to adjust home position. !");
-#endif
-  fix_stepper_position();
-#if SERIAL
-  Serial.println("[STEPPER]> ! Homing calibration phase terminated !");
-#endif
-#endif
-  // Final Blink to acknolwedge it's all good
+  // Final Blink to acknolwedge it's all good man
   blinkFlash();
   tasks.startNow();
 }
@@ -129,11 +109,11 @@ void loop() {
     region_movement = calculate_region(regions_diff);
     moveTP = calculate_moveTP(region_movement);
 #if SERIAL
-    Serial.println("===============================================");
-    Serial.println("[MOTION]> Motion detected");
+    Serial.println(F("==============================================="));
+    Serial.println(F("[MOTION]> Motion detected"));
     Serial.println("[MOTION]> Motion in Region: " + String(region_movement));
     Serial.println("[MOTION]> Moving To: " + String(moveTP));
-    Serial.println("===============================================");
+    Serial.println(F("==============================================="));
 #endif
   }
   flag = true;
@@ -164,7 +144,7 @@ void handle_jpg_stream_request() {
     header += "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
     client.print(header);
 #if SERIAL
-    Serial.println("[SERVER]> Client connected, starting stream...");
+    Serial.println(F("[SERVER]> Client connected, starting stream..."));
 #endif
   }
 }
@@ -172,7 +152,7 @@ void handle_jpg_stream_request() {
 void send_jpg_frame() {
   if (client && client.connected()) {
     if (!fb) {
-      Serial.println("[CAMERA]> Error while capturing frame");
+      Serial.println(F("[CAMERA]> Error while capturing frame"));
       client.stop();
       return;
     }
@@ -180,7 +160,7 @@ void send_jpg_frame() {
     size_t jpeg_len = 0;
     bool jpeg_converted = frame2jpg(fb, 40, &jpeg_buf, &jpeg_len);  // converting to jpg with 80% quality
     if (!jpeg_converted) {
-      Serial.println("[CAMERA]> Error converting grayscale image to JPEG");
+      Serial.println(F("[CAMERA]> Error converting grayscale image to JPEG"));
       esp_camera_fb_return(fb);
       client.stop();
       return;
@@ -232,7 +212,7 @@ bool detect_motion() {
 void get_frame() {
   fb = esp_camera_fb_get();
   if (!fb) {
-    Serial.println("Errore durante la cattura del frame");
+    Serial.println(F("Errore durante la cattura del frame"));
     return;
   }
   int region_width = RES_WIDTH / REGIONS;
@@ -315,9 +295,9 @@ bool connect_to_WIFI() {
 #endif
   }
 #if SERIAL
-  Serial.println("");
-  Serial.println("[WIFI]> Wifi Connected");
-  Serial.println("[WIFI]> IP: ");
+  Serial.println(F(""));
+  Serial.println(F("[WIFI]> Wifi Connected"));
+  Serial.println(F("[WIFI]> IP: "));
   Serial.println(WiFi.localIP());
 #endif
   return true;
@@ -337,25 +317,6 @@ void stepperTest() {
   generic_stepper.step(-STEPS_PER_REVOLUTION / 2);
 }
 
-void fix_stepper_position() {
-  while (!isConfirmed) {
-    int currentPosition = analogRead(POTENZIOMETER_IN);
-    if (abs(currentPosition - fix_position_prev_val) < POTENZIOMETER_THRESHOLD) {
-      if (millis() - lastStableTime > stableTime) {
-#if SERIAL
-        Serial.println("[STEPPER]> Position Set.");
-#endif
-        isConfirmed = true;
-        break;
-      }
-    } else {
-      lastStableTime = millis();
-    }
-    generic_stepper.step(currentPosition - fix_position_prev_val);
-    fix_position_prev_val = currentPosition;
-  }
-  pinMode(POTENZIOMETER_IN, OUTPUT);
-}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////// GENERAL INITS /////////////////////////////////////////////
@@ -418,8 +379,4 @@ void laser_init() {
   delay(2000);
   digitalWrite(LASER_IN, LOW);
   delay(2000);
-}
-
-void potenziometer_init() {
-  pinMode(POTENZIOMETER_IN, INPUT);
 }

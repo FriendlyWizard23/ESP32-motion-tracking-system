@@ -12,20 +12,21 @@ It is also possible, as explained below, enable a real-time WebServer to observe
 - **28BYJ-48 Stepper Motor**: Responsible for moving the camera and targeting system to follow the detected entity.
 - **ULN2003 Motor Driver**: Drives the stepper motor based on the input signals from the microcontroller.
 - **Power Supply**: External 9V power supply for the stepper motor and USB or 3.3V for the microcontroller.
-- **Potentiometer**: Potentiometer used to home the stepper if option is enabled.
-- **Laser Module**: The laser module (AKA BFG 11K or Nuclear Laser Beam) is used to shoot at the entity identified by the camera as motion.
+- **Laser Module**: The laser module (AKA BFG 11K or Nuclear Laser Beam) is used to shoot at the entity identified by the camera as motion for total annihilation.
 
 ### Functionality:
- 
-When motion is detected inside the camera's FOV, the stepper motor adjusts its position to follow the movement of the object. As soon as the detected motion results "still" and the motor has reached the "final" position, a laser beam is shot in the moving entitiy's direction. The entire process is controlled by the ESP32 microcontroller, which processes erything in real-time.
+When motion is detected inside the camera's FOV, the stepper motor adjusts its position to follow the movement of the object. As soon as the detected motion results "still" and the motor has reached the "final" position, a laser beam is shot in the moving entitiy's direction. The entire process is controlled by the ESP32 microcontroller, which processes everything in real-time.
 
 ### Key Features:
 - **Real-time Motion Detection**: Utilizes the ESP32's camera module to capture frames and detect motion through pixel comparison.
 - **Automated Targeting**: The stepper motor adjusts its position automatically to follow moving entities inside the camera's Field of View.
 - **Customizable Parameters**: Thresholds for motion detection, speed of the stepper motor, and frame resolution can be fine-tuned for specific use cases.
-
-- **(BETA) Stepper Motor Homing**: by using a potentiometer it's possible to set the stepper home position each time the system is powered up. This  could  
 - **Real-Time WebServer**: if enabled it is possible to connect to x.x.x.x/stream and observe the real time stream of the camera.
+### Images
+
+<img src="./images/esp32_2.jpg" alt="ESP32 Image 2" width="250" />
+<img src="./images/esp32_1.jpg" alt="ESP32 Image 1" width="200" />
+<img src="./images/esp32_0.jpg" alt="ESP32 Image 0" width="465" />
 
 ### How It Works:
 1. **Frame Capture**: The camera module captures video frames at a predefined resolution (defeault is 320x240).
@@ -48,7 +49,6 @@ For the configuration, you should consider 1 as YES and 0 as NO
 #define SERIAL                          --> Serial Output
 #define ENABLE_WEB_SERVER               --> Enable Web Server
 #define CAMERA_MODEL_AI_THINKER         --> Camera Model
-#define FIX_HOMING                      --> Homing Setup feature
 
 #define FRAME_SIZE                      --> Frame Size
 #define RES_WIDTH                       --> Frame Width
@@ -57,7 +57,6 @@ For the configuration, you should consider 1 as YES and 0 as NO
 #define STEPS_PER_DEGREE                --> How many steps per degree
 #define STEPS_PER_REVOLUTION            --> How many steps per revolution
 #define STEPPER_RPM                     --> Stepper motor's RPM
-#define POTENZIOMETER_THRESHOLD         --> Threshold for noise filtering
 
 #define REGIONS                         --> FOV's REGIONS
 #define MID_REGION                      floor(REGIONS/2)
@@ -65,10 +64,10 @@ For the configuration, you should consider 1 as YES and 0 as NO
 #define HORIZONTAL_PIXELS_PER_REGION    floor(RES_WIDTH/REGIONS)      
 #define FOV_HORIZONTAL                  --> Camera module's FOV
 ```
-### Challenges:
-- **Power Management**: The system requires separate power sources for the microcontroller and stepper motor, ensuring stability.
-- **Frame Processing**: Efficiently processing frames in real-time while avoiding delays or missed movements.
-- **Stepper Motor Precision**: Fine-tuning the stepper motor for smooth and accurate targeting based on the detected motion.
+### Challenges encountered:
+- **Power Management**: The system requires separate power sources for the microcontroller and stepper motor. 
+- **Frame Processing**: Efficiently processing frames in real-time while avoiding delays or missed movements especially while using the real time monitoring web server. Unfortunately, the usage of tasks may cause some minor loss of "parsed" frames.
+- **Stepper Motor Precision**: Fine tuning the stepper motor movements to correctly follow the target by writing a formula using number of regions and FOV.
 
 ### Future Improvements:
 - **Object Recognition**: Integrating object recognition to follow specific types of objects.
