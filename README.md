@@ -3,8 +3,7 @@
 ## Abstract
 This project makes use of an ESP32 Camera microcontroller, combined with a stepper motor, to create a real-time tracking system. 
 The main idea behind it was to create a simple system that could be able to track objects moving within the range of the ESP32's camera module.
-By using Proportional–integral–derivative controller the system ensures an improved precision whilst targeting the entity found in motion.
-It is also possible, as explained below, enable a real-time WebServer to observe the camera's stream.
+It is also possible, as explained below, to enable a real-time WebServer to observe the camera's stream.
 ## Technical Overview
 
 ### Components:
